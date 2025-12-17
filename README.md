@@ -4,7 +4,7 @@ A refactored version of the ESP8266 LED Matrix Clock that uses SPI TFT displays 
 
 ## Features
 
-- 🎨 **Simulates 32x8 LED Matrix Display** on TFT screen with realistic LED pixel appearance
+- 🎨 **Simulates 32x16 LED Matrix Display** on TFT screen with realistic LED pixel appearance (4x2 MAX7219 Displays)
 - ⏰ **Three Display Modes**: Time+Temperature, Large Time, Time+Date
 - 🌡️ **BME280 Sensor Integration**: Temperature, humidity, and pressure readings
 - 📡 **WiFi Manager**: Easy setup without hardcoded credentials
