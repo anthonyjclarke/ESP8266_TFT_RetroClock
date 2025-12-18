@@ -9,7 +9,7 @@
  * All functionality remains identical to the original LED matrix version
  *
  * ======================== CHANGELOG ========================
- * 18th December 2025:
+ * 18th December 2025 - Version 2.1:
  *   - Fixed Mode 2 (Time+Date) to remove leading zero from single-digit hours
  *   - Completely redesigned web interface with modern dark theme
  *   - Added large digital clock display with live auto-update (updates every second)
@@ -24,10 +24,14 @@
  *   - Added fluid typography with CSS clamp() for all screen sizes
  *   - Created responsive grid layout for environment cards
  *   - Added touch-friendly UI elements and hover effects
+ *   - Migrated from Adafruit_GFX/Adafruit_ILI9341 to TFT_eSPI library
+ *   - Improved rendering performance with hardware-optimized library
+ *   - Configured 40MHz SPI bus speed for faster display updates
  *
  * =========================== TODO ==========================
  * - Get weather from online API and display on matrix and webpage
  * - Add OTA firmware update capability
+ * - Remove this "Sensor: 27°C, 83% RH, 1005 hPa" from Serial Output / redundant
  * - add mew display modes, like morphing (from @cbmamiga) 
  * - refactor code for ESP32 compatibility and use of the CYD display - https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display
  * 
@@ -53,23 +57,11 @@
 #include <Adafruit_BME280.h>
 #include <time.h>
 #include <TZ.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_ILI9341.h>  // For ILI9341 displays
-// #include <Adafruit_ST7789.h>  // Uncomment for ST7789 displays
-
-// ======================== DISPLAY SELECTION ========================
-// Uncomment ONE of the following display types:
-#define USE_ILI9341
-// #define USE_ST7789
+#include <TFT_eSPI.h>  // Hardware-specific library with optimized performance
 
 // ======================== PIN DEFINITIONS ========================
-// TFT Display SPI Pins
+// TFT Display SPI Pins - Now configured in User_Setup.h for TFT_eSPI
 #define LED_PIN   D8    // TFT Backlight (if applicable)
-#define TFT_CS    D1    // TFT Chip Select
-#define TFT_DC    D2    // TFT Data/Command
-//#define TFT_RST   D4    // TFT Reset (or connect to ESP reset)
-//#define MOSI      D7    // MOSI (hardware SPI)
-//#define SCK       D5    // SCK (hardware SPI)
 
 // Sensor and Control Pins (BME280 only)
 #define SDA_PIN   D4    // I2C Data (BME280)
@@ -135,11 +127,7 @@
 #endif
 
 // ======================== DISPLAY OBJECT ========================
-#ifdef USE_ILI9341
-  Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC /*, TFT_RST*/);
-#elif defined(USE_ST7789)
-  Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
-#endif
+TFT_eSPI tft = TFT_eSPI();  // TFT_eSPI uses configuration from User_Setup.h
 
 // ======================== DISPLAY BUFFER ========================
 // Virtual screen buffer matching original LED matrix structure
@@ -312,26 +300,21 @@ const int numTimezones = sizeof(timezones) / sizeof(timezones[0]);
 
 void initTFT() {
   DEBUG(Serial.println("Initializing TFT Display..."));
-  
+
   // Add small delay before TFT initialization
   delay(100);
-  
-  #ifdef USE_ILI9341
-    tft.begin();
-    tft.setRotation(3);  // Try rotation 3 (landscape, flipped) instead of 1
-    DEBUG(Serial.printf("ILI9341 initialized, rotation set to 3\n"));
-  #elif defined(USE_ST7789)
-    tft.init(240, 320);  // Initialize for specific resolution
-    tft.setRotation(3);  // Try rotation 3 (landscape, flipped) instead of 1
-    DEBUG(Serial.printf("ST7789 initialized, rotation set to 3\n"));
-  #endif
-  
+
+  // TFT_eSPI initialization
+  tft.init();
+  tft.setRotation(3);  // Rotation 3 = landscape mode (320x240)
+  DEBUG(Serial.printf("TFT_eSPI initialized, rotation set to 3\n"));
+
   // Small delay after initialization
   delay(100);
-  
+
   // Check actual dimensions
   DEBUG(Serial.printf("TFT reports dimensions: %d x %d\n", tft.width(), tft.height()));
-  
+
   tft.fillScreen(BG_COLOR);
   pinMode(LED_PIN, D8);
   digitalWrite(LED_PIN, HIGH);
@@ -339,8 +322,8 @@ void initTFT() {
   // Calculate display dimensions
   int displayWidth = tft.width();
   int displayHeight = tft.height();
-  int offsetX = max(0, (displayWidth - DISPLAY_WIDTH) / 2);
-  int offsetY = max(0, (displayHeight - DISPLAY_HEIGHT) / 2);
+  int offsetX = ((displayWidth - DISPLAY_WIDTH) / 2) > 0 ? ((displayWidth - DISPLAY_WIDTH) / 2) : 0;
+  int offsetY = ((displayHeight - DISPLAY_HEIGHT) / 2) > 0 ? ((displayHeight - DISPLAY_HEIGHT) / 2) : 0;
   
   DEBUG(Serial.printf("TFT Display initialized: %dx%d\n", displayWidth, displayHeight));
   DEBUG(Serial.printf("LED Matrix area: %dx%d at offset (%d,%d)\n", 
@@ -403,8 +386,8 @@ void drawLEDPixel(int x, int y, bool lit, int brightness) {
   }
   
   // Calculate screen position with centering offset
-  int offsetX = max(0, (tft.width() - DISPLAY_WIDTH) / 2);
-  int offsetY = max(0, (tft.height() - DISPLAY_HEIGHT) / 2);
+  int offsetX = ((tft.width() - DISPLAY_WIDTH) / 2) > 0 ? ((tft.width() - DISPLAY_WIDTH) / 2) : 0;
+  int offsetY = ((tft.height() - DISPLAY_HEIGHT) / 2) > 0 ? ((tft.height() - DISPLAY_HEIGHT) / 2) : 0;
   
   // Add extra gap between matrix rows (after row 7, before row 8)
   // 4-pixel gap for authentic MAX7219 hardware spacing
@@ -884,8 +867,6 @@ void updateSensorData() {
   if (!isnan(pres) && pres >= 800 && pres <= 1200) {
     pressure = (int)round(pres);
   }
-  
-  DEBUG(Serial.printf("Sensor: %d°C, %d%% RH, %d hPa\n", temperature, humidity, pressure));
 }
 
 // ======================== NTP SYNC FUNCTION ========================
@@ -1073,7 +1054,13 @@ void setupWebServer() {
     html += ".then(function(d){";
     html += "var clock=document.getElementById('clock');";
     html += "var date=document.getElementById('date');";
-    html += "if(clock){clock.textContent=d.hours+':'+(d.minutes<10?'0':'')+d.minutes+':'+(d.seconds<10?'0':'')+d.seconds;}";
+    html += "var h=d.hours;";
+    html += "var ampm='';";
+    html += "if(!d.use24hour){";
+    html += "ampm=(h>=12)?' PM':' AM';";
+    html += "h=(h%12)||12;";
+    html += "}";
+    html += "if(clock){clock.textContent=(d.use24hour&&h<10?'0':'')+h+':'+(d.minutes<10?'0':'')+d.minutes+':'+(d.seconds<10?'0':'')+d.seconds+ampm;}";
     html += "if(date){date.textContent=(d.day<10?'0':'')+d.day+'/'+(d.month<10?'0':'')+d.month+'/'+d.year;}";
     html += "})";
     html += ".catch(function(e){console.log('Update failed:',e);});";
@@ -1219,9 +1206,10 @@ void setupWebServer() {
   
   // API endpoints
   server.on("/api/time", []() {
-    String json = "{\"hours\":" + String(hours24) + ",\"minutes\":" + String(minutes) + 
-                  ",\"seconds\":" + String(seconds) + ",\"day\":" + String(day) + 
-                  ",\"month\":" + String(month) + ",\"year\":" + String(year) + "}";
+    String json = "{\"hours\":" + String(hours24) + ",\"minutes\":" + String(minutes) +
+                  ",\"seconds\":" + String(seconds) + ",\"day\":" + String(day) +
+                  ",\"month\":" + String(month) + ",\"year\":" + String(year) +
+                  ",\"use24hour\":" + String(use24HourFormat ? "true" : "false") + "}";
     server.send(200, "application/json", json);
   });
   
@@ -1572,8 +1560,8 @@ void loop() {
   
   // Print status
   if (now - lastStatusPrint >= STATUS_PRINT_INTERVAL) {
-    DEBUG(Serial.printf("Time: %02d:%02d | Date: %02d/%02d/%04d | Temp: %d°C | Hum: %d%%\n",
-                        hours24, minutes, day, month, year, temperature, humidity));
+    DEBUG(Serial.printf("Time: %02d:%02d | Date: %02d/%02d/%04d | Temp: %d°C | Hum: %d%% | Pressure: %d hPa\n",
+                        hours24, minutes, day, month, year, temperature, humidity, pressure));
     lastStatusPrint = now;
   }
   
