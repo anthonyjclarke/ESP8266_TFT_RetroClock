@@ -9,6 +9,13 @@
  * All functionality remains identical to the original LED matrix version
  *
  * ======================== CHANGELOG ========================
+ * 19th December 2025 - Version 2.2:
+ *   - Added TFT Display Mirror feature on web page (real-time Canvas rendering)
+ *   - New /api/display endpoint returns 64-byte buffer with minimal overhead (~200 bytes/request)
+ *   - Canvas-based LED matrix rendering in browser (supports both display styles)
+ *   - Auto-refresh every 500ms for near real-time display mirroring
+ *   - Dynamically syncs LED color, surround color, and display style settings
+ *
  * 18th December 2025 - Version 2.1:
  *   - Fixed Mode 2 (Time+Date) to remove leading zero from single-digit hours
  *   - Completely redesigned web interface with modern dark theme
@@ -30,12 +37,12 @@
  *
  * =========================== TODO ==========================
  * - Get weather from online API and display on matrix and webpage
- * - Move Timezone Definitions to a header file for easier management
  * - Add OTA firmware update capability
  * - add mew display modes, like morphing (from @cbmamiga) 
  * - refactor code for ESP32 compatibility and use of the CYD display - https://github.com/witnessmenow/ESP32-Cheap-Yellow-Display
+ * - Update Readme.md with sample screenshots of new web interface and TFT display
+ * - Optimize TFT drawing routines further for even faster refresh rates
  * 
- *
  * ======================== FEATURES ========================
  * - Simulates 4x2 MAX7219 LED matrix appearance on TFT display
  * - WiFiManager for easy WiFi setup (no hardcoded credentials)
@@ -139,6 +146,7 @@ Adafruit_BME280 bme280;
 
 // ======================== FONT INCLUDES ========================
 #include "fonts.h"
+#include "timezones.h"
 
 // ======================== TIME VARIABLES ========================
 int hours = 0, minutes = 0, seconds = 0;
@@ -172,107 +180,9 @@ int currentMode = 0; // 0=Time+Temp, 1=Time Large, 2=Time+Date
 unsigned long lastModeSwitch = 0;
 #define MODE_SWITCH_INTERVAL 5000
 
-// ======================== TIMEZONE CONFIGURATION ========================
-struct TimezoneInfo {
-  const char* name;
-  const char* tzString;
-};
-
-// Expanded timezone array with 88 global timezones
-TimezoneInfo timezones[] = {
-  {"Sydney, Australia", "AEST-10AEDT,M10.1.0,M4.1.0/3"},
-  {"Melbourne, Australia", "AEST-10AEDT,M10.1.0,M4.1.0/3"},
-  {"Brisbane, Australia", "AEST-10"},
-  {"Adelaide, Australia", "ACST-9:30ACDT,M10.1.0,M4.1.0/3"},
-  {"Perth, Australia", "AWST-8"},
-  {"Darwin, Australia", "ACST-9:30"},
-  {"Hobart, Australia", "AEST-10AEDT,M10.1.0,M4.1.0/3"},
-  {"New York, USA", "EST5EDT,M3.2.0,M11.1.0"},
-  {"Los Angeles, USA", "PST8PDT,M3.2.0,M11.1.0"},
-  {"Chicago, USA", "CST6CDT,M3.2.0,M11.1.0"},
-  {"Denver, USA", "MST7MDT,M3.2.0,M11.1.0"},
-  {"Phoenix, USA", "MST7"},
-  {"Anchorage, USA", "AKST9AKDT,M3.2.0,M11.1.0"},
-  {"Honolulu, USA", "HST10"},
-  {"London, UK", "GMT0BST,M3.5.0/1,M10.5.0"},
-  {"Paris, France", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Berlin, Germany", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Rome, Italy", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Madrid, Spain", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Amsterdam, Netherlands", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Brussels, Belgium", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Vienna, Austria", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Zurich, Switzerland", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Stockholm, Sweden", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Oslo, Norway", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Copenhagen, Denmark", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Helsinki, Finland", "EET-2EEST,M3.5.0/3,M10.5.0/4"},
-  {"Athens, Greece", "EET-2EEST,M3.5.0/3,M10.5.0/4"},
-  {"Moscow, Russia", "MSK-3"},
-  {"Dubai, UAE", "GST-4"},
-  {"Mumbai, India", "IST-5:30"},
-  {"Bangkok, Thailand", "ICT-7"},
-  {"Singapore", "SGT-8"},
-  {"Hong Kong", "HKT-8"},
-  {"Shanghai, China", "CST-8"},
-  {"Tokyo, Japan", "JST-9"},
-  {"Seoul, South Korea", "KST-9"},
-  {"Auckland, New Zealand", "NZST-12NZDT,M9.5.0,M4.1.0/3"},
-  {"Wellington, New Zealand", "NZST-12NZDT,M9.5.0,M4.1.0/3"},
-  {"Fiji", "FJT-12FJST,M11.1.0,M1.3.0/3"},
-  {"Toronto, Canada", "EST5EDT,M3.2.0,M11.1.0"},
-  {"Vancouver, Canada", "PST8PDT,M3.2.0,M11.1.0"},
-  {"Montreal, Canada", "EST5EDT,M3.2.0,M11.1.0"},
-  {"Mexico City, Mexico", "CST6CDT,M4.1.0,M10.5.0"},
-  {"Sao Paulo, Brazil", "BRT3BRST,M10.3.0/0,M2.3.0/0"},
-  {"Buenos Aires, Argentina", "ART3"},
-  {"Santiago, Chile", "CLT4CLST,M8.2.6/24,M5.2.6/24"},
-  {"Lima, Peru", "PET5"},
-  {"Bogota, Colombia", "COT5"},
-  {"Caracas, Venezuela", "VET4:30"},
-  {"Johannesburg, South Africa", "SAST-2"},
-  {"Cairo, Egypt", "EET-2"},
-  {"Lagos, Nigeria", "WAT-1"},
-  {"Nairobi, Kenya", "EAT-3"},
-  {"Tel Aviv, Israel", "IST-2IDT,M3.4.4/26,M10.5.0"},
-  {"Istanbul, Turkey", "TRT-3"},
-  {"Riyadh, Saudi Arabia", "AST-3"},
-  {"Karachi, Pakistan", "PKT-5"},
-  {"Dhaka, Bangladesh", "BST-6"},
-  {"Yangon, Myanmar", "MMT-6:30"},
-  {"Jakarta, Indonesia", "WIB-7"},
-  {"Manila, Philippines", "PHT-8"},
-  {"Taipei, Taiwan", "CST-8"},
-  {"Kuala Lumpur, Malaysia", "MYT-8"},
-  {"Ho Chi Minh, Vietnam", "ICT-7"},
-  {"Kabul, Afghanistan", "AFT-4:30"},
-  {"Tehran, Iran", "IRST-3:30IRDT,J79/24,J263/24"},
-  {"Reykjavik, Iceland", "GMT0"},
-  {"Lisbon, Portugal", "WET0WEST,M3.5.0/1,M10.5.0"},
-  {"Dublin, Ireland", "IST-1GMT0,M10.5.0,M3.5.0/1"},
-  {"Prague, Czech Republic", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Warsaw, Poland", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Budapest, Hungary", "CET-1CEST,M3.5.0,M10.5.0/3"},
-  {"Bucharest, Romania", "EET-2EEST,M3.5.0/3,M10.5.0/4"},
-  {"Sofia, Bulgaria", "EET-2EEST,M3.5.0/3,M10.5.0/4"},
-  {"Kiev, Ukraine", "EET-2EEST,M3.5.0/3,M10.5.0/4"},
-  {"Minsk, Belarus", "MSK-3"},
-  {"Yerevan, Armenia", "AMT-4"},
-  {"Tbilisi, Georgia", "GET-4"},
-  {"Baku, Azerbaijan", "AZT-4"},
-  {"Tashkent, Uzbekistan", "UZT-5"},
-  {"Almaty, Kazakhstan", "ALMT-6"},
-  {"Bishkek, Kyrgyzstan", "KGT-6"},
-  {"Colombo, Sri Lanka", "IST-5:30"},
-  {"Kathmandu, Nepal", "NPT-5:45"},
-  {"Thimphu, Bhutan", "BTT-6"},
-  {"Ulaanbaatar, Mongolia", "ULAT-8"},
-  {"Port Moresby, Papua New Guinea", "PGT-10"},
-  {"Noumea, New Caledonia", "NCT-11"}
-};
-
+// ======================== TIMEZONE ========================
+// Timezone definitions are now in include/timezones.h
 int currentTimezone = 0;
-const int numTimezones = sizeof(timezones) / sizeof(timezones[0]);
 
 // ======================== TFT DISPLAY FUNCTIONS ========================
 
@@ -950,6 +860,12 @@ void setupWebServer() {
     html += "@media(min-width:769px) and (max-width:1024px){";
     html += ".env-grid{grid-template-columns:repeat(3,1fr);}";
     html += "}";
+    // TFT Display Mirror styles
+    html += ".tft-mirror{background:linear-gradient(135deg,#2a2a2a,#1e1e1e);padding:clamp(15px,3vw,25px);border-radius:15px;box-shadow:0 8px 32px rgba(0,0,0,0.3);margin-bottom:20px;text-align:center;}";
+    html += ".tft-mirror h2{color:#aaa;border-bottom:2px solid #E91E63;padding-bottom:5px;font-size:clamp(16px,4vw,18px);font-weight:500;margin-top:0;text-align:left;}";
+    html += ".canvas-container{display:flex;justify-content:center;align-items:center;padding:15px;background:#000;border-radius:10px;margin-top:15px;}";
+    html += "#tftCanvas{image-rendering:pixelated;image-rendering:crisp-edges;border-radius:5px;}";
+    html += ".tft-label{color:#888;font-size:12px;margin-top:10px;}";
     html += "</style>";
     html += "<script>";
     html += "function updateTime(){";
@@ -971,6 +887,56 @@ void setupWebServer() {
     html += "}";
     html += "setInterval(updateTime,1000);";
     html += "setTimeout(updateTime,100);";
+    // TFT Display Mirror - Canvas rendering functions
+    html += "var tftCanvas,tftCtx,ledSize=10,gapSize=4;";
+    html += "function rgb565ToHex(c){var r=((c>>11)&0x1F)*8,g=((c>>5)&0x3F)*4,b=(c&0x1F)*8;return'rgb('+r+','+g+','+b+')';}";
+    html += "function dimColor(r,g,b,f){return'rgb('+Math.floor(r/f)+','+Math.floor(g/f)+','+Math.floor(b/f)+')';}";
+    html += "function initCanvas(){";
+    html += "tftCanvas=document.getElementById('tftCanvas');";
+    html += "if(!tftCanvas)return;";
+    html += "tftCtx=tftCanvas.getContext('2d');";
+    html += "tftCanvas.width=32*ledSize;";
+    html += "tftCanvas.height=16*ledSize+gapSize;";
+    html += "tftCtx.fillStyle='#000';tftCtx.fillRect(0,0,tftCanvas.width,tftCanvas.height);";
+    html += "}";
+    html += "function drawLED(x,y,lit,style,ledColor,surroundColor){";
+    html += "var gap=(y>=8)?gapSize:0;";
+    html += "var sx=x*ledSize,sy=y*ledSize+gap;";
+    html += "var onCol=rgb565ToHex(ledColor);";
+    html += "var surCol=rgb565ToHex(surroundColor);";
+    html += "if(style===0){";
+    html += "tftCtx.fillStyle=lit?onCol:'#000';";
+    html += "tftCtx.fillRect(sx,sy,ledSize,ledSize);";
+    html += "}else{";
+    html += "tftCtx.fillStyle='#000';tftCtx.fillRect(sx,sy,ledSize,ledSize);";
+    html += "if(lit){";
+    html += "tftCtx.fillStyle=surCol;";
+    html += "tftCtx.beginPath();tftCtx.arc(sx+ledSize/2,sy+ledSize/2,ledSize/2-1,0,Math.PI*2);tftCtx.fill();";
+    html += "tftCtx.fillStyle=onCol;";
+    html += "tftCtx.beginPath();tftCtx.arc(sx+ledSize/2,sy+ledSize/2,ledSize/2-2,0,Math.PI*2);tftCtx.fill();";
+    html += "}else{";
+    html += "tftCtx.fillStyle='#180000';";
+    html += "tftCtx.beginPath();tftCtx.arc(sx+ledSize/2,sy+ledSize/2,ledSize/2-2,0,Math.PI*2);tftCtx.fill();";
+    html += "}}}";
+    html += "function updateDisplay(){";
+    html += "fetch('/api/display')";
+    html += ".then(function(r){return r.json();})";
+    html += ".then(function(d){";
+    html += "if(!tftCtx)initCanvas();";
+    html += "if(!tftCtx)return;";
+    html += "var buf=d.buffer,w=d.width,style=d.style,ledCol=d.ledColor,surCol=d.surroundColor;";
+    html += "for(var row=0;row<2;row++){";
+    html += "for(var x=0;x<32;x++){";
+    html += "var byteVal=buf[x+row*32];";
+    html += "for(var bit=0;bit<8;bit++){";
+    html += "var y=row*8+bit;";
+    html += "var lit=(byteVal&(1<<bit))!==0;";
+    html += "drawLED(x,y,lit,style,ledCol,surCol);";
+    html += "}}}})";
+    html += ".catch(function(e){console.log('Display update failed:',e);});";
+    html += "}";
+    html += "setInterval(updateDisplay,500);";
+    html += "setTimeout(function(){initCanvas();updateDisplay();},200);";
     html += "</script>";
     html += "</head><body>";
     html += "<div class='header'><h1>TFT LED Matrix Clock</h1></div>";
@@ -979,6 +945,15 @@ void setupWebServer() {
     html += "<h2>Current Time & Environment</h2>";
     html += "<div class='clock' id='clock'>" + String(hours24) + ":" + String(minutes < 10 ? "0" : "") + String(minutes) + ":" + String(seconds < 10 ? "0" : "") + String(seconds) + "</div>";
     html += "<div class='date' id='date'>" + String(day < 10 ? "0" : "") + String(day) + "/" + String(month < 10 ? "0" : "") + String(month) + "/" + String(year) + "</div>";
+    html += "</div>";
+
+    // TFT Display Mirror Section
+    html += "<div class='tft-mirror'>";
+    html += "<h2>📺 TFT Display Mirror</h2>";
+    html += "<div class='canvas-container'>";
+    html += "<canvas id='tftCanvas'></canvas>";
+    html += "</div>";
+    html += "<p class='tft-label'>Live display - Updates every 500ms | 32×16 LED Matrix</p>";
     html += "</div>";
 
     if (sensorAvailable) {
@@ -1114,6 +1089,23 @@ void setupWebServer() {
                   ",\"seconds\":" + String(seconds) + ",\"day\":" + String(day) +
                   ",\"month\":" + String(month) + ",\"year\":" + String(year) +
                   ",\"use24hour\":" + String(use24HourFormat ? "true" : "false") + "}";
+    server.send(200, "application/json", json);
+  });
+  
+  // Display buffer API endpoint - returns 64-byte screen buffer and display settings
+  // This enables real-time TFT display mirroring on the web page with minimal overhead
+  server.on("/api/display", []() {
+    String json = "{\"buffer\":[";
+    for (int i = 0; i < LINE_WIDTH * DISPLAY_ROWS; i++) {
+      json += String(scr[i]);
+      if (i < LINE_WIDTH * DISPLAY_ROWS - 1) json += ",";
+    }
+    json += "],\"style\":" + String(displayStyle);
+    json += ",\"ledColor\":" + String(ledOnColor);
+    json += ",\"surroundColor\":" + String(ledSurroundColor);
+    json += ",\"width\":" + String(TOTAL_WIDTH);
+    json += ",\"height\":" + String(TOTAL_HEIGHT);
+    json += "}";
     server.send(200, "application/json", json);
   });
   

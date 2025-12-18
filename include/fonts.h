@@ -1,3 +1,18 @@
+/*
+ * fonts.h - LED Matrix Font Definitions
+ * 
+ * Contains bitmap font data for the LED matrix display
+ * Fonts are stored in PROGMEM to save RAM on ESP8266
+ * 
+ * Font format: {width, height, first_char, last_char, data...}
+ * Each character has a width byte followed by column data
+ */
+
+#ifndef FONTS_H
+#define FONTS_H
+
+#include <Arduino.h>
+
 const uint8_t digits7x16[] PROGMEM = {7,16,'0',':',
 0x07, 0xFC, 0x3F, 0xFE, 0x7F, 0x03, 0xC0, 0x01, 0x80, 0x03, 0xC0, 0xFE, 0x7F, 0xFC, 0x3F,  // Code for char 0
 0x05, 0x08, 0x00, 0x0C, 0x00, 0x06, 0x00, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00, 0x00,  // Code for char 1
@@ -138,4 +153,4 @@ const uint8_t digits5x8rn[] PROGMEM = { 5,8,' ',':',
 1, B00100100, B00000000, B00000000, B00000000, B00000000, // :
 };
 
-
+#endif // FONTS_H
