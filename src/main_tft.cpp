@@ -74,7 +74,7 @@
 #include <TFT_eSPI.h>  // Hardware-specific library with optimized performance
 
 // ======================== VERSION ========================
-const char* VERSION = "1.1.0";
+const char* VERSION = "1.2.0";
 
 // ======================== PIN DEFINITIONS ========================
 // TFT Display SPI Pins - Now configured in User_Setup.h for TFT_eSPI
