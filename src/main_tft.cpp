@@ -9,7 +9,14 @@
  * All functionality remains identical to the original LED matrix version
  *
  * ======================== CHANGELOG ========================
- * 19th December 2025 - Version 2.2:
+ * 20th January 2026 - Version 1.1:
+ *   - Added about section in web UI footer with GitHub repo link and BlueSky contact
+ *   - Created CHANGELOG.md file following semantic versioning
+ *   - Added VERSION constant for centralized version management
+ *   - Increased TFT Display Mirror size from 320x164 to 800x410 pixels (25px per LED)
+ *   - Added inline comments for easy LED size customization
+ *
+ * 19th December 2025 - Version 1.0 (formerly 2.2):
  *   - Added TFT Display Mirror feature on web page (real-time Canvas rendering)
  *   - New /api/display endpoint returns 64-byte buffer with minimal overhead (~200 bytes/request)
  *   - Canvas-based LED matrix rendering in browser (supports both display styles)
@@ -65,6 +72,9 @@
 #include <time.h>
 #include <TZ.h>
 #include <TFT_eSPI.h>  // Hardware-specific library with optimized performance
+
+// ======================== VERSION ========================
+const char* VERSION = "1.1.0";
 
 // ======================== PIN DEFINITIONS ========================
 // TFT Display SPI Pins - Now configured in User_Setup.h for TFT_eSPI
@@ -864,8 +874,12 @@ void setupWebServer() {
     html += ".tft-mirror{background:linear-gradient(135deg,#2a2a2a,#1e1e1e);padding:clamp(15px,3vw,25px);border-radius:15px;box-shadow:0 8px 32px rgba(0,0,0,0.3);margin-bottom:20px;text-align:center;}";
     html += ".tft-mirror h2{color:#aaa;border-bottom:2px solid #E91E63;padding-bottom:5px;font-size:clamp(16px,4vw,18px);font-weight:500;margin-top:0;text-align:left;}";
     html += ".canvas-container{display:flex;justify-content:center;align-items:center;padding:15px;background:#000;border-radius:10px;margin-top:15px;}";
-    html += "#tftCanvas{image-rendering:pixelated;image-rendering:crisp-edges;border-radius:5px;}";
+    html += "#tftCanvas{image-rendering:pixelated;image-rendering:crisp-edges;border-radius:5px;max-width:100%;height:auto;}";
     html += ".tft-label{color:#888;font-size:12px;margin-top:10px;}";
+    html += ".footer{text-align:center;padding:20px;margin-top:30px;border-top:1px solid #333;color:#888;font-size:clamp(12px,3vw,14px);}";
+    html += ".footer p{margin:5px 0;}";
+    html += ".footer a{color:#4CAF50;text-decoration:none;transition:color 0.3s;}";
+    html += ".footer a:hover{color:#7CFC00;text-decoration:underline;}";
     html += "</style>";
     html += "<script>";
     html += "function updateTime(){";
@@ -888,7 +902,11 @@ void setupWebServer() {
     html += "setInterval(updateTime,1000);";
     html += "setTimeout(updateTime,100);";
     // TFT Display Mirror - Canvas rendering functions
-    html += "var tftCanvas,tftCtx,ledSize=10,gapSize=4;";
+    // LED size controls the canvas display size on the web page
+    // ledSize=25 creates 800x410px canvas (25px per LED × 32×16 LEDs)
+    // Options: 10=320x164, 15=480x246, 20=640x328, 25=800x410, 30=960x492
+    // gapSize should be ledSize × 0.4 for proper row spacing
+    html += "var tftCanvas,tftCtx,ledSize=25,gapSize=10;";
     html += "function rgb565ToHex(c){var r=((c>>11)&0x1F)*8,g=((c>>5)&0x3F)*4,b=(c&0x1F)*8;return'rgb('+r+','+g+','+b+')';}";
     html += "function dimColor(r,g,b,f){return'rgb('+Math.floor(r/f)+','+Math.floor(g/f)+','+Math.floor(b/f)+')';}";
     html += "function initCanvas(){";
@@ -1078,7 +1096,14 @@ void setupWebServer() {
     html += "<p>Uptime: " + String(millis() / 1000) + "s</p>";
     html += "<button onclick=\"if(confirm('Reset WiFi?'))location.href='/reset'\">Reset WiFi</button>";
     html += "</div>";
-    
+
+    // About footer
+    html += "<div class='footer'>";
+    html += "<p>ESP8266 TFT LED Retro Clock v" + String(VERSION) + "</p>";
+    html += "<p>Created by <a href='https://bsky.app/profile/anthonyclarke.bsky.social' target='_blank'>Anthony Clarke</a></p>";
+    html += "<p><a href='https://github.com/anthonyjclarke/ESP8266_TFT_RetroClock' target='_blank'>GitHub Repository</a></p>";
+    html += "</div>";
+
     html += "</body></html>";
     server.send(200, "text/html", html);
   });
@@ -1301,7 +1326,10 @@ void setup() {
   delay(1000);
   
   DEBUG(Serial.println("\n\n╔════════════════════════════════════════╗"));
-  DEBUG(Serial.println("║   ESP8266 TFT Matrix Clock v1.0        ║"));
+  // Calculate padding to keep box width at 40 chars (30 + version length + padding = 40)
+  int versionLen = strlen(VERSION);
+  int padding = 40 - 30 - versionLen;  // 30 = length of "   ESP8266 TFT Matrix Clock v"
+  DEBUG(Serial.printf("║   ESP8266 TFT Matrix Clock v%s%*s║\n", VERSION, padding, ""));
   DEBUG(Serial.println("║   TFT Display Edition                  ║"));
   DEBUG(Serial.println("╚════════════════════════════════════════╝\n"));
   
